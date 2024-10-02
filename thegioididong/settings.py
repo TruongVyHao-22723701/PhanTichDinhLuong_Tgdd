@@ -108,8 +108,5 @@ FEEDS = {
         'indent': 4,
     },
 }
-ITEM_PIPELINES = {
-   'thegioididong.pipelines.MongoDBTgddPipeline': 400
-}
 
-DOWNLOAD_DELAY = 2
+

@@ -1,0 +1,24 @@
+class MongoDBTgddPipeline:
+    def __init__(self):
+        # Connection String
+        econnect = str(os.environ.get('Mongo_HOST', 'localhost'))
+        #self.client = pymongo.MongoClient('mongodb://mymongodb:27017')
+        self.client = pymongo.MongoClient('mongodb://'+econnect+':27017')
+        self.db = self.client['dbmycrawler'] #Create Database      
+        pass
+    
+    def process_item(self, item, spider):
+        
+        collection =self.db['tgddcrawler'] #Create Collection or Table
+        try:
+            collection.insert_one(dict(item))
+            return item
+        except Exception as e:
+            raise DropItem(f"Error inserting item: {e}")       
+        pass
+
+ITEM_PIPELINES = {
+   'thegioididong.pipelines.MongoDBTgddPipeline': 400
+}
+
+DOWNLOAD_DELAY = 2

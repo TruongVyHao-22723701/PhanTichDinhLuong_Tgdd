@@ -68,13 +68,17 @@ class DongHoDeoTaySpider(scrapy.Spider):
         res = requests.get(detail_url, headers=self.headers)
         soup = BeautifulSoup(res.text, 'lxml')
         
-        # Lấy thông tin khuyến mãi
-        promotion_section = soup.find(class_="divb-right")
+        # Tìm thẻ <div> có data-promotion="2972784"
+        promotion_div = soup.find('div', class_='divb', attrs={'data-promotion': '2972784'})
         promotion_info = ""
-        if promotion_section:
-            promotion_info = promotion_section.text.strip()
-            #(xem chi tiết)
-            promotion_info=promotion_info.replace("(Xem chi tiết tại đây)","").strip()
+        
+        if promotion_div:
+            # Lấy nội dung bên trong thẻ div có class="divb-right"
+            promotion_section = promotion_div.find(class_="divb-right")
+            if promotion_section:
+                promotion_info = promotion_section.text.strip()
+                # Loại bỏ (Xem chi tiết tại đây) nếu có
+                promotion_info = promotion_info.replace("(Xem chi tiết tại đây)", "").strip()
         # Lấy các thông tin khác
         thongtin = soup.find(class_="text-specifi active")
         if thongtin:
@@ -96,7 +100,6 @@ class DongHoDeoTaySpider(scrapy.Spider):
                 'Độ dày mặt:': "N/A",
                 'Kháng nước:': "N/A",
                 'Nguồn năng lượng:': "N/A",
-                'Tiện ích:': "N/A",
                 'Chất liệu mặt kính:': "N/A",
                 'Thương hiệu của:': "N/A"
             }
