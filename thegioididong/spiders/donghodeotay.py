@@ -146,10 +146,3 @@ class DongHoDeoTaySpider(scrapy.Spider):
 
             yield product_info
 
-            # Sau khi cào xong, gọi hàm để lưu vào Excel
-            self.save_to_excel()
-
-    def save_to_excel(self):
-        # Chuyển danh sách sản phẩm thành DataFrame và lưu vào file Excel
-        df = pd.DataFrame(self.products)
-        df.to_excel('dongho_products.xlsx', index=False)
