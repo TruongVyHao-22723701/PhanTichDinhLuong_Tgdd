@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import requests
 import re
+from kafka import KafkaProducer
 
 class DongHoDeoTaySpider(scrapy.Spider):
     name = "dongho_spider"
@@ -27,9 +28,12 @@ class DongHoDeoTaySpider(scrapy.Spider):
     }
 
     products = []
+    # Khởi tạo Kafka Producer
+    producer = KafkaProducer(bootstrap_servers=['localhost:9092'], value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+
 
     def start_requests(self):
-        for i in range(55):  # Lặp qua các trang
+        for i in range(50):  # Lặp qua các trang
             url = f"https://www.thegioididong.com/Category/FilterProductBox?c=7264&pi={i}"
             yield scrapy.FormRequest(url, method='POST', headers=self.headers, formdata=self.data, callback=self.parse)
 
@@ -40,7 +44,6 @@ class DongHoDeoTaySpider(scrapy.Spider):
         # Dùng BeautifulSoup để phân tích cú pháp HTML
         soup = BeautifulSoup(listproducts_html, 'html.parser')
         product_items = soup.find_all('li', class_='item __cate_7264')
-
         for item in product_items:
             product_name = item.find('h3', class_="fashionWatch-name").text.strip() if item.find('h3', class_="fashionWatch-name") else "Unknown"
             price = item.find('strong', class_="price").text.strip().replace('₫', '').replace('đ', '').replace('.', '').strip() if item.find('strong', class_="price") else "Unknown"
@@ -50,13 +53,16 @@ class DongHoDeoTaySpider(scrapy.Spider):
             
             old_price = float(old_price) if old_price.isnumeric() else 0.0
             product_url = self.base_url + item.find('a').get('href', '') if item.find('a') else None
+            # Lấy product_id từ thuộc tính data-id của thẻ <li>
+            product_id = item.get('data-id', 'Unknown')  # Lấy 'data-id' từ <li>
 
             # Gửi yêu cầu đến URL sản phẩm để lấy thông tin chi tiết
             if product_url:
-                yield scrapy.Request(product_url, callback=self.parse_product_detail, meta={'name': product_name, 'price': price, 'old_price': old_price})
+                yield scrapy.Request(product_url, callback=self.parse_product_detail, meta={'product_id': product_id,'name': product_name, 'price': price, 'old_price': old_price})
 
     def parse_product_detail(self, response):
         # Thông tin chi tiết sản phẩm
+        product_id = response.meta['product_id']
         product_name = response.meta['name']
         price = response.meta['price']
         old_price = response.meta['old_price']
@@ -66,19 +72,7 @@ class DongHoDeoTaySpider(scrapy.Spider):
         
         # Gửi yêu cầu đến detail_url để lấy thông tin chi tiết
         res = requests.get(detail_url, headers=self.headers)
-        soup = BeautifulSoup(res.text, 'lxml')
-        
-        # Tìm thẻ <div> có data-promotion="2972784"
-        promotion_div = soup.find('div', class_='divb', attrs={'data-promotion': '2972784'})
-        promotion_info = ""
-        
-        if promotion_div:
-            # Lấy nội dung bên trong thẻ div có class="divb-right"
-            promotion_section = promotion_div.find(class_="divb-right")
-            if promotion_section:
-                promotion_info = promotion_section.text.strip()
-                # Loại bỏ (Xem chi tiết tại đây) nếu có
-                promotion_info = promotion_info.replace("(Xem chi tiết tại đây)", "").strip()
+        soup = BeautifulSoup(res.text, 'lxml')        
         # Lấy các thông tin khác
         thongtin = soup.find(class_="text-specifi active")
         if thongtin:
@@ -86,10 +80,10 @@ class DongHoDeoTaySpider(scrapy.Spider):
             
             # Tạo dictionary để lưu thông tin chi tiết
             product_info = {
+                'Product ID':product_id,
                 'Name': product_name,
                 'Price': price,
-                'Old Price': old_price,
-                'Promotion': promotion_info  
+                'Old Price': old_price
             }
             
             # Các thuộc tính cần truy xuất cụ thể
@@ -101,7 +95,8 @@ class DongHoDeoTaySpider(scrapy.Spider):
                 'Kháng nước:': "N/A",
                 'Nguồn năng lượng:': "N/A",
                 'Chất liệu mặt kính:': "N/A",
-                'Thương hiệu của:': "N/A"
+                'Thương hiệu của:': "N/A",
+                'Hãng:':"N/A"
             }
 
             for item in thongtin:
@@ -115,15 +110,52 @@ class DongHoDeoTaySpider(scrapy.Spider):
                     
                     # Nếu strong.text là một trong những thuộc tính cần tìm
                     if key in target_attributes:
-                        values = [element.text.strip() for element in span_elements]
-                        value = ', '.join(values)  # Kết hợp các giá trị thành một chuỗi
-                        
+                        # Lấy nội dung text từ <span>, bỏ qua các thẻ có class "parameter__manu"
+                        values = [
+                            element.text.strip()
+                            for element in span_elements
+                            if "parameter__manu" not in element.get("class", [])
+                        ]
+                        # Xóa cụm từ "Xem thông tin hãng" nếu xuất hiện
+                        cleaned_values = [value.replace("Xem thông tin hãng", "").strip() for value in values]
+                        value = ', '.join(cleaned_values)  # Kết hợp các giá trị thành một chuỗi                      
                         # Lưu giá trị vào target_attributes
                         target_attributes[key] = value
-
             # Cập nhật product_info với thông tin chi tiết
             product_info.update(target_attributes)
+            # **Lấy số lượng sản phẩm đã bán**
+            quantity_sale = soup.find('span', class_='quantity-sale')
+            if quantity_sale:
+                product_info['Quantity Sale'] = quantity_sale.text.strip().replace('Đã bán', '').strip()
+            else:
+                product_info['Quantity Sale'] = '0'
+            
+            # **Lấy thông tin giảm giá (Discount)**
+            discount = soup.find('p', class_='box-price-percent')
+            if discount:
+                product_info['Discount'] = discount.text.strip()
+            else:
+                product_info['Discount'] = 'N/A'
+            # **Lấy tỉ lệ đánh giá và số lượng đánh giá**
+            rating = soup.find('div', class_='box-star')
+            if rating:
+                # Tỉ lệ đánh giá
+                rating_value = rating.find('p').text.strip()  # Lấy giá trị số sao
+                product_info['Rating'] = rating_value
+            else:
+                product_info['Rating']='None'
 
+            # Số lượng đánh giá
+            rating = soup.find('div', class_='box-star')
+            if rating:
+                review_count = rating.find('a', class_='total-cmtrt')
+                if review_count:
+                    product_info['Review Count'] = review_count.text.strip()
+                else:
+                    product_info['Review Count'] = '0'  # Nếu không tìm thấy, gán mặc định là 0
+            else:
+                product_info['Review Count'] = '0'  # Nếu không tìm thấy phần tử rating, gán mặc định là 0
+                
             # Lấy bình luận từ trang sản phẩm
             comments = soup.find_all('li', class_='par')
             if comments:  # Nếu có bình luận
@@ -143,6 +175,9 @@ class DongHoDeoTaySpider(scrapy.Spider):
                 product_info['Bình luận'] = "N/A"
             
             self.products.append(product_info)
-
+            
+            # **Gửi dữ liệu vào Kafka**
+            self.producer.send('product-topic', product_info)
+            
             yield product_info
 

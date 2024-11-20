@@ -16,12 +16,12 @@ class MongoDBTgddPipeline:
         econnect = str(os.environ.get('Mongo_HOST', 'localhost'))
         #self.client = pymongo.MongoClient('mongodb://mymongodb:27017')
         self.client = pymongo.MongoClient('mongodb://'+econnect+':27017')
-        self.db = self.client['TGDD_CRAWLER'] #Create Database      
+        self.db = self.client['tgdd_db'] #Create Database      
         pass
     
     def process_item(self, item, spider):
         
-        collection =self.db['DHDT_Collection'] #Create Collection or Table
+        collection =self.db['dhdt_product'] #Create Collection or Table
         try:
             collection.insert_one(dict(item))
             return item

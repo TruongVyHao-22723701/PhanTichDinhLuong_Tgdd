@@ -108,10 +108,10 @@ FEEDS = {
         'indent': 4,
     },
 }
+
 ITEM_PIPELINES = {
    'thegioididong.pipelines.MongoDBTgddPipeline': 400
 }
-
 DOWNLOAD_DELAY=0.5
 CONCURRENT_REQUESTS = 32  # Số lượng yêu cầu đồng thời
 CONCURRENT_REQUESTS_PER_DOMAIN = 16  # Số lượng yêu cầu tối đa trên mỗi domain
